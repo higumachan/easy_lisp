@@ -302,6 +302,23 @@ SYMBOL* bind_match(char label[])
 	return (NULL);
 }
 
+SYMBOL* const_match(char label[])
+{
+	SYMBOL* result;
+
+	result = NIL;
+	if (strcmp(label, "t") == 0){
+		result = allocate_symbol();
+		result->type = T;
+	}
+	else if (strcmp(label, "nil") == 0){
+		result = allocate_symbol();
+		result->type = F;
+	}
+
+	return (result);
+}
+
 void bind_stack_push(char label[], SYMBOL* value)
 {
 	BIND* bind = &stack[stack_ptr++];
@@ -437,12 +454,15 @@ SYMBOL* eval(SYMBOL* symb)
 {
 	SYMBOL* _car;
 	CONS* _cdr;
+	SYMBOL* result;
 	
 	switch (symb->type){
 	  case LIST:
 	  	_car = car((CONS *)(symb->value));
-		if (_car->value == NIL){
-			return (NIL);
+		if (((CONS *)(symb->value))->car == NIL){
+			result = allocate_symbol();
+			result->type = F;
+			return (result);
 		}
 		_cdr = cdr((CONS *)(symb->value));
 		return(match(_car, _cdr));
@@ -450,6 +470,10 @@ SYMBOL* eval(SYMBOL* symb)
 	  case STRING:
 	  	return (symb);
 	  case FUNCTION:
+	  	result = const_match(symb->value);
+		if (result != NIL){
+			return (result);
+		}
 	  	return (bind_match(symb->value));
 	  default:
 	  	printf("InvalitSintax");
@@ -977,6 +1001,11 @@ int main(void)
 	s = shell("(inclist (quote (1 2 3)))", &end);
 	print_symbol(eval(s));
 	puts("");
+	s = shell("()", &end);
+	print_symbol(eval(s));
+	puts("");
+	gc();
+
 #if 0
 	for (i = 0; i < 100; i++){
 		s = shell("(plus 1 2)", &end);
