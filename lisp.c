@@ -515,6 +515,7 @@ SYMBOL* setq(CONS* _cdr)
 	val = car(_cdr);
 	set = car(cdr(_cdr));
 
+	print_symbol(set);
 	bind_set(val->value, eval(set));
 
 	return (result);
@@ -728,7 +729,6 @@ SYMBOL* match(SYMBOL* func, CONS* _cdr)
 	else if (strcmp(func->value, "funcall") == 0){
 		FUNC* f;
 		f = (FUNC *)((eval(car(_cdr)))->value);
-
 		return (funcall(f, cdr(_cdr)));
 	}
 	else if (strcmp(func->value, "car") == 0){
@@ -963,6 +963,18 @@ int main(void)
 	print_symbol(eval(s));
 	puts("");
 	s = shell("(funcall x 1 3)", &end);
+	print_symbol(eval(s));
+	puts("");
+	s = shell("(defun test (x y z) (funcall x y z))", &end);
+	print_symbol(eval(s));
+	puts("");
+	s = shell("(test (lambda (x y) (plus x y)) 10 2)", &end);
+	print_symbol(eval(s));
+	puts("");
+	s = shell("(defun inclist (x) (cond ((null x) (quote ())) ((eq 1 1) (cons (plus (car x) 1) (inclist (cdr x))))))", &end);
+	print_symbol(eval(s));
+	puts("");
+	s = shell("(inclist (quote (1 2 3)))", &end);
 	print_symbol(eval(s));
 	puts("");
 #if 0
