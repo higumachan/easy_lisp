@@ -326,9 +326,25 @@ void bind_stack_push(char label[], SYMBOL* value)
 	bind->value = value;
 }
 
+void bind_stack_start()
+{
+	BIND* bind = &stack[stack_ptr++];
+
+	strcpy(bind->label, "__STACKSTART__");
+	bind->value = NIL;
+}
+
 void bind_stack_pop(int pop_count)
 {
 	stack_ptr -= pop_count;
+}
+
+void bind_stack_end(void)
+{
+	while (stack_ptr >= 0 && stack[stack_ptr - 1].value != NIL){
+		stack_ptr--;
+	}
+	stack_ptr--;
 }
 
 FUNC* func_match(char label[])
@@ -392,7 +408,9 @@ void dump_stack(void)
 
 	for (i = 0; i < stack_ptr; i++){
 		printf("%s:", stack[i].label);
+		/*
 		print_symbol(stack[i].value);
+		*/
 		puts("");
 	}
 }
@@ -405,10 +423,7 @@ SYMBOL* funcall(FUNC* f, CONS* arg)
 
 	cur_real_arg = arg;
 	cur_vart_arg = (CONS *)((f->arg)->value);
-	print_symbol(f->body);
-	print_symbol(f->arg);
-	printf("%d\n", f->arg_count);
-	puts("");
+	bind_stack_start();
 	while (cur_real_arg->car != NIL && cur_vart_arg->car != NIL){
 		SYMBOL* label;
 		SYMBOL* val;
@@ -419,8 +434,7 @@ SYMBOL* funcall(FUNC* f, CONS* arg)
 		cur_real_arg = cdr(cur_real_arg);
 	}
 	result = eval(f->body);
-	printf("arg_count=%d\n", f->arg_count);
-	bind_stack_pop(f->arg_count);
+	bind_stack_end();
 	
 	return (result);
 }
@@ -553,8 +567,13 @@ SYMBOL* setq(CONS* _cdr)
 	val = car(_cdr);
 	set = car(cdr(_cdr));
 
-	print_symbol(set);
-	bind_set(val->value, eval(set));
+	printf("stack_ptr=%d\n", stack_ptr);
+	if (stack_ptr == 0){
+		bind_set(val->value, eval(set));
+	}
+	else {
+		bind_stack_push(val->value, eval(set));
+	}
 
 	return (result);
 }
@@ -1039,7 +1058,13 @@ int main(void)
 	s = shell("(defun concat (x y) (cond ((null x) y) (t (cons (car x) (concat (cdr x) y)))))", &end);
 	print_symbol(eval(s));
 	puts("");
-	s = shell("(concat (quote (1 2 3)) (quote (4 5 6)))", &end);
+	s = shell("(defun if (condition true false) (cond (condition true) (t false)))", &end);
+	print_symbol(eval(s));
+	puts("");
+	s = shell("y", &end);
+	print_symbol(eval(s));
+	puts("");
+	s = shell("(if (eq y 55) 1 2)", &end);
 	print_symbol(eval(s));
 	puts("");
 #endif
@@ -1070,8 +1095,6 @@ int main(void)
 		print_symbol(s);
 		print_symbol(eval(s));
 		puts("");
-		printf("stack_ptr=%d\n", stack_ptr);
-		dump_stack();
 	}
 	return (0);
 }
