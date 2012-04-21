@@ -1,5 +1,4 @@
 
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -58,7 +57,7 @@ void gc(void);
 
 SYMBOL* allocate_symbol(void)
 {
-	if ((float)heap_ptr / (float)MAX_SIZE >= 0.9){
+	if ((float)heap_ptr / (float)MAX_SIZE >= 0.8){
 		gc();
 	}
 	return (&heap[heap_ptr++]);
@@ -426,6 +425,20 @@ SYMBOL* funcall(FUNC* f, CONS* arg)
 	return (result);
 }
 
+int cons_length(CONS*cons)
+{
+	CONS* cur;
+	int result;
+
+	cur = cons;
+	result = 0;
+	while (cur->car != NIL){
+		result++;
+		cur = cdr(cur);
+	}
+	return (result);
+}
+
 SYMBOL* lambda(CONS* cons)
 {
 	SYMBOL* result;
@@ -436,6 +449,7 @@ SYMBOL* lambda(CONS* cons)
 	func = (FUNC *)(result->value);
 	func->arg = car(cons);
 	func->body = car(cdr(cons));
+	func->arg_count = cons_length(cons);
 
 	return (result);
 }
@@ -812,7 +826,7 @@ SYMBOL* shell(char* input, int* end_index)
 	int index = 0;
 	int end;
 	
-	while (input[index] == ' ' || input[index] == ')') {
+	while (isspace(input[index]) || input[index] == ')') {
 		index++;
 	}
 	if (input[index] == '('){
@@ -876,6 +890,9 @@ SYMBOL* shell(char* input, int* end_index)
 		}
 		index++;
 	}
+	while (isspace(input[index])){
+		index++;
+	}
 	*end_index = index;
 	return (result);
 }
@@ -928,6 +945,7 @@ int main(void)
 		}
 		i++;
 	}
+#if 1
 	s = shell("(multi 1 2 3)", &end);
 	print_symbol(eval(s));
 	puts("");
@@ -995,7 +1013,7 @@ int main(void)
 	s = shell("(test (lambda (x y) (plus x y)) 10 2)", &end);
 	print_symbol(eval(s));
 	puts("");
-	s = shell("(defun inclist (x) (cond ((null x) (quote ())) ((eq 1 1) (cons (plus (car x) 1) (inclist (cdr x))))))", &end);
+	s = shell("(defun inclist (x) (cond ((null x) nil) ((eq 1 1) (cons (plus (car x) 1) (inclist (cdr x))))))", &end);
 	print_symbol(eval(s));
 	puts("");
 	s = shell("(inclist (quote (1 2 3)))", &end);
@@ -1004,8 +1022,27 @@ int main(void)
 	s = shell("()", &end);
 	print_symbol(eval(s));
 	puts("");
+	s = shell("(    plus  5  (plus 2 3)  ) ", &end);
+	print_symbol(s);
+	print_symbol(eval(s));
+	puts("");
+	s = shell("(defun nadeko  () (plus 1 2)) ", &end);
+	print_symbol(s);
+	print_symbol(eval(s));
+	puts("");
+	s = shell("(nadeko)", &end);
+	print_symbol(eval(s));
 	gc();
-
+	s = shell("(inclist (quote (1 2 3)))", &end);
+	print_symbol(eval(s));
+	puts("");
+	s = shell("(defun concat (x y) (cond ((null x) y) (t (cons (car x) (concat (cdr x) y)))))", &end);
+	print_symbol(eval(s));
+	puts("");
+	s = shell("(concat (quote (1 2 3)) (quote (4 5 6)))", &end);
+	print_symbol(eval(s));
+	puts("");
+#endif
 #if 0
 	for (i = 0; i < 100; i++){
 		s = shell("(plus 1 2)", &end);
@@ -1033,6 +1070,8 @@ int main(void)
 		print_symbol(s);
 		print_symbol(eval(s));
 		puts("");
+		printf("stack_ptr=%d\n", stack_ptr);
+		dump_stack();
 	}
 	return (0);
 }
