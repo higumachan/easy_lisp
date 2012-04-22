@@ -15,11 +15,8 @@ typedef void* CELL;
 #define LAMBDA (6)
 
 #define MAX_SIZE (100000)
-#define STACK_SIZE (100000)
 #define MAX_LABEL_LEN (64)
-
-#define USE (1)
-#define NONUSE (0)
+#define MAX_ARGS (128)
 
 typedef struct {
 	CELL car;
@@ -43,14 +40,11 @@ typedef struct {
 	SYMBOL* body;
 } FUNC;
 
-char evaling[MAX_SIZE];
-char cons_heap_flag[MAX_SIZE];
-char heap_flag[MAX_SIZE];
 CONS cons_heap[MAX_SIZE];
 SYMBOL heap[MAX_SIZE];
 BIND bind[MAX_SIZE];
 FUNC func[MAX_SIZE];
-BIND stack[STACK_SIZE];
+BIND stack[MAX_SIZE];
 int cons_heap_ptr;
 int heap_ptr;
 int bind_ptr;
@@ -61,43 +55,23 @@ SYMBOL* match(SYMBOL* func, CONS* cdr);
 SYMBOL* car(CONS* cons);
 CONS* cdr(CONS* cons);
 SYMBOL* eval(SYMBOL* symb);
-SYMBOL* _eval(SYMBOL* symb);
 void gc(void);
 void dump_stack(void);
-void dump_symbol(void);
 
 SYMBOL* allocate_symbol(void)
 {
-	int start_ptr;
-	SYMBOL* result;
-	
-	if ((float)heap_ptr / (float)MAX_SIZE >= 0.95){
+	if ((float)heap_ptr / (float)MAX_SIZE >= 0.8){
 		gc();
 	}
-	start_ptr = heap_ptr;
-	while (heap_flag[heap_ptr] == USE){
-		heap_ptr = (heap_ptr + 1) % MAX_SIZE;
-	}
-	heap_flag[heap_ptr] = USE;
-	result = &heap[heap_ptr];
-	heap_ptr = (heap_ptr + 1) % MAX_SIZE;
-	return (result);
+	return (&heap[heap_ptr++]);
 }
 
 CONS* allocate_cons(void)
 {
-	CONS* result;
-
 	if ((float)cons_heap_ptr / (float)MAX_SIZE >= 0.8){
 		gc();
 	}
-	while (cons_heap_flag[cons_heap_ptr] == USE){
-		cons_heap_ptr = (cons_heap_ptr + 1) % MAX_SIZE;
-	}
-	cons_heap_flag[cons_heap_ptr] = USE;
-	result = &cons_heap[cons_heap_ptr];
-	cons_heap_ptr = (cons_heap_ptr + 1) % MAX_SIZE;
-	return (result);
+	return (&cons_heap[cons_heap_ptr++]);
 }
 
 BIND* allocate_stack(void)
@@ -172,7 +146,8 @@ int _get_cons_index(CONS* target)
 	if ((target - cons_heap) < MAX_SIZE && (target - cons_heap) >= 0){
 		return (target - cons_heap);
 	}
-	printf("nanikagaokasii cons");
+	printf("nanikagaokasii cons\n");
+	printf("%d\n", target - cons_heap);
 	return (-1);
 }
 
@@ -184,7 +159,7 @@ int check_bind(char check[])
 	for (i = stack_ptr - 1; i >= 0; i--){
 		if (stack[i].value != NULL){
 #ifdef DEBUG
-			printf("%d:stack=%s ", i, stack[i].label);
+			printf("%d:stack=%s\n", i, stack[i].label);
 			print_symbol(stack[i].value);
 			puts("");
 #endif
@@ -336,8 +311,7 @@ void gc(void)
 	
 	printf("symbol_heap=%d cons_heap %d\n", heap_ptr, cons_heap_ptr);
 	printf("start gc\n");
-	//memset(check, 0, sizeof(check));
-	memcpy(check, evaling, sizeof(check));
+	memset(check, 0, sizeof(check));
 	memset(check_cons, 0, sizeof(check_cons));
 	check_bind(check);
 	check_func(check);
@@ -346,16 +320,13 @@ void gc(void)
 			checking(check, check_cons, i);
 		}
 	}
-	memcpy(heap_flag, check, sizeof(check));
-	memcpy(cons_heap_flag, check_cons, sizeof(check_cons));
-	for (i = 0; i < MAX_SIZE; i++){
-		if (heap_flag[i] == 0){
-			memset(&heap[i], 0, sizeof(SYMBOL));
-		}
+	defrag(check, (char *)heap, sizeof(SYMBOL), &heap_ptr);
+	defrag(check_cons, (char *)cons_heap, sizeof(CONS), &cons_heap_ptr);
+	for (i = heap_ptr; i < MAX_SIZE; i++){
+		memset(&heap[i], 0, sizeof(SYMBOL));
 	}
 	puts("end gc");
 	printf("symbol_heap=%d cons_heap %d\n", heap_ptr, cons_heap_ptr);
-	heap_ptr = cons_heap_ptr = 0;
 }
 
 SYMBOL* bind_match(char label[])
@@ -488,10 +459,13 @@ void dump_symbol(void)
 {
 	int i;
 
+	puts("nadeko");
 	for (i = 0; i < heap_ptr; i++){
+#ifdef DEBUG
 		printf("%d: ", i);
 		print_symbol(&heap[i]);
 		puts("");
+#endif
 	}
 }
 void dump_stack(void)
@@ -507,14 +481,18 @@ void dump_stack(void)
 	}
 }
 
+
 SYMBOL* funcall(FUNC* f, CONS* arg)
 {
 	CONS* cur_real_arg;
 	CONS* cur_vart_arg;
+	SYMBOL* args_label[MAX_ARGS];
+	SYMBOL* args_value[MAX_ARGS];
+	int args_count;
 	SYMBOL* result;
-	SYMBOL temp;
-	
-#ifdef DEBUG_FUNCSTEP
+	int i;
+
+#ifdef DEBUG_FUNCALL
 	printf("in %s", f->label);
 	print_symbol(f->arg);
 	print_symbol(f->body);
@@ -528,19 +506,33 @@ SYMBOL* funcall(FUNC* f, CONS* arg)
 #endif
 	cur_real_arg = arg;
 	cur_vart_arg = (CONS *)((f->arg)->value);
-	bind_stack_start();
+	args_count = 0;
 	while (cur_real_arg->car != NIL && cur_vart_arg->car != NIL){
 		SYMBOL* label;
 		SYMBOL* val;
-		label = car(cur_vart_arg);
-		val = car(cur_real_arg);
-		bind_stack_push(label->value, eval(val));
+		if (args_count < MAX_ARGS){
+			args_label[args_count] = car(cur_vart_arg);
+			args_value[args_count++] = eval(car(cur_real_arg));
+		}
+		else {
+			printf("%d\n", args_count);
+			printf("over max args\n");
+			exit(-1);
+		}
 		cur_vart_arg = cdr(cur_vart_arg);
 		cur_real_arg = cdr(cur_real_arg);
 	}
+	bind_stack_start();
+	for (i = 0; i < args_count; i++){
+		bind_stack_push(args_label[i]->value, args_value[i]);
+	}
 	result = eval(f->body);
 	bind_stack_end();
-#ifdef DEBUG_FUNCSTEP
+#ifdef DEBUG_FUNCALL
+	printf("%s:", f->label);
+	print_symbol(result);
+	puts("");
+	dump_stack();
 	printf("out %s\n", f->label);
 #endif
 	
@@ -588,20 +580,10 @@ CONS* cdr(CONS* cons)
 
 SYMBOL* eval(SYMBOL* symb)
 {
-	SYMBOL* result;
-	
-	evaling[symb - heap] = 1;
-	result = _eval(symb);
-	evaling[symb - heap] = 0;
-
-	return (result);
-}
-
-SYMBOL* _eval(SYMBOL* symb)
-{
 	SYMBOL* _car;
 	CONS* _cdr;
 	SYMBOL* result;
+
 	
 	switch (symb->type){
 	  case LIST:
@@ -872,7 +854,7 @@ CONS* _cons(SYMBOL* a, CONS* b)
 {
 	CONS* result;
 	
-	result = &cons_heap[cons_heap_ptr++];
+	result = allocate_cons();
 	result->car = (CELL)a;
 	result->cdr = (CELL)b;
 
@@ -882,16 +864,46 @@ CONS* _cons(SYMBOL* a, CONS* b)
 SYMBOL* cons(CONS* _cdr)
 {
 	SYMBOL* result;
+	CONS* eval_cons;
 	CONS* cur;
 
 	result = allocate_symbol();
 	result->type = LIST;
-	cur = _cons(eval(car(_cdr)), (CONS *)(eval(car(cdr(_cdr)))->value));
-	((CONS *)(result->value))->car = cur->car;
-	((CONS *)(result->value))->cdr = cur->cdr;
+	eval_cons = (CONS *)(eval(car(cdr(_cdr)))->value);
+	cur = allocate_cons();
+	cur->car = eval_cons->car;
+	cur->cdr = eval_cons->cdr;
+	((CONS *)(result->value))->car = eval(car(_cdr));
+	((CONS *)(result->value))->cdr = cur;
 
 	return (result);
 }
+
+SYMBOL* list(CONS* args)
+{
+	SYMBOL *result;
+	CONS* cur;
+	CONS* _cdr;
+	CONS* cons;
+	
+	result = allocate_symbol();
+	result->type = LIST;
+	((CONS *)(result->value))->car = NIL;
+	((CONS *)(result->value))->cdr = NIL;
+	_cdr = args;
+	cur = (CONS *)(result->value);
+	while (_cdr->car != NIL){
+		cons = allocate_cons();
+		cons->car = cons->cdr = NIL;
+		cur->car = eval(car(_cdr));
+		cur->cdr = cons;
+		cur = cons;
+		_cdr = cdr(_cdr);
+	}
+
+	return (result);
+}
+
 
 SYMBOL* match(SYMBOL* func, CONS* _cdr)
 {
@@ -917,6 +929,9 @@ SYMBOL* match(SYMBOL* func, CONS* _cdr)
 	}
 	else if (strcmp(func->value, "null") == 0){
 		return (null(_cdr));
+	}
+	else if (strcmp(func->value, "list") == 0){
+		return (list(_cdr));
 	}
 	else if (strcmp(func->value, "eval") == 0){
 		return (eval(eval(car(_cdr))));
@@ -1018,7 +1033,7 @@ SYMBOL* shell(char* input, int* end_index)
 #ifdef DEBUG
 			printf("value=%d\n", *(int *)(((SYMBOL *)(cons->car))->value));
 #endif
-			temp = &cons_heap[cons_heap_ptr++];
+			temp = allocate_cons();
 			temp->car = NIL;
 			temp->cdr = NIL;
 			(cons->cdr) = temp;
@@ -1076,7 +1091,6 @@ int print_symbol(SYMBOL* symb)
 
 	if (symb == NIL){
 		puts("nil");
-		return (0);
 	}
 
 	if (symb->type == LIST){
@@ -1154,7 +1168,7 @@ int main(void)
 	s = shell("(inc 10)", &end);
 	print_symbol(eval(s));
 	puts("");
-	s = shell("(defun sum (x) (cond ((eq x 1) 1) (t (plus x (sum (minus x 1))))))", &end);
+	s = shell("(defun sum (x) (cond ((eq x 1) 1) ((eq 1 1) (plus x (sum (minus x 1))))))", &end);
 	print_symbol(s);
 	print_symbol(eval(s));
 	puts("");
@@ -1165,12 +1179,6 @@ int main(void)
 	print_symbol(eval(s));
 	puts("");
 	s = shell("(null (quote (1 2 3)))", &end);
-	print_symbol(eval(s));
-	puts("");
-	s = shell("(defun list (x) (cond ((null x) 0) ((eq 1 1) (plus (car x) (list (cdr x))))))", &end);
-	print_symbol(eval(s));
-	puts("");
-	s = shell("(list (quote (1 2 3 7)))", &end);
 	print_symbol(eval(s));
 	puts("");
 	s = shell("(cons 123 (quote (1 2 3 7)))", &end);
@@ -1232,20 +1240,32 @@ int main(void)
 	print_symbol(eval(s));
 	puts("test");
 	gc();
-	s = shell("(sum 1000)", &end);
-	print_symbol(eval(s));
-	puts("test");
-	s = shell("(sum 1000)", &end);
+	s = shell("(concat (quote (1 2)) (quote (3 4)))", &end);
 	print_symbol(eval(s));
 	puts("");
-	s = shell("(setq x (sum 1000))", &end);
-	s = eval(s);
-	print_symbol(s);
-	puts("");
-	s = shell("x", &end);
+	s = shell("(defun rev (x) (if (null x) nil (concat (rev (cdr x)) (list (car x)))))", &end);
 	print_symbol(eval(s));
+	puts("");
+	s = shell("(defun range (x) (if (eq x 0) nil (cons x (range (minus x 1)))))", &end);
+	print_symbol(eval(s));
+	puts("");
+	s = shell("(range 10)", &end);
+	print_symbol(eval(s));
+	puts("");
+	s = shell("(list (car (quote (1 2 3))))", &end);
+	print_symbol(eval(s));
+	puts("");
+	s = shell("(setq x (quote (1 2 3 4)))", &end);
+	print_symbol(eval(s));
+	puts("");
+	s = shell("(setq z (map (lambda (x) (multi x x)) (range 1000)))", &end);
+	print_symbol(eval(s));
+	puts("");
 	gc();
-	
+	s = shell("z", &end);
+	print_symbol(eval(s));
+	puts("");
+	gc();
 	
 #endif
 #if 0
@@ -1272,7 +1292,6 @@ int main(void)
 			i++;
 		}
 		s = shell(str, &end);
-		print_symbol(s);
 		print_symbol(eval(s));
 		puts("");
 	}
