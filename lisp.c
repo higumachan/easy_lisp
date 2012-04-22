@@ -15,6 +15,7 @@ typedef void* CELL;
 #define LAMBDA (6)
 
 #define MAX_SIZE (10000)
+#define STACK_SIZE (100000)
 #define MAX_LABEL_LEN (64)
 
 typedef struct {
@@ -39,11 +40,12 @@ typedef struct {
 	SYMBOL* body;
 } FUNC;
 
+int evaling = -1;
 CONS cons_heap[MAX_SIZE];
 SYMBOL heap[MAX_SIZE];
 BIND bind[MAX_SIZE];
 FUNC func[MAX_SIZE];
-BIND stack[MAX_SIZE];
+BIND stack[STACK_SIZE];
 int cons_heap_ptr;
 int heap_ptr;
 int bind_ptr;
@@ -54,12 +56,14 @@ SYMBOL* match(SYMBOL* func, CONS* cdr);
 SYMBOL* car(CONS* cons);
 CONS* cdr(CONS* cons);
 SYMBOL* eval(SYMBOL* symb);
+SYMBOL* _eval(SYMBOL* symb);
 void gc(void);
 void dump_stack(void);
+void dump_symbol(void);
 
 SYMBOL* allocate_symbol(void)
 {
-	if ((float)heap_ptr / (float)MAX_SIZE >= 0.8){
+	if ((float)heap_ptr / (float)MAX_SIZE >= 0.95){
 		gc();
 	}
 	return (&heap[heap_ptr++]);
@@ -157,7 +161,7 @@ int check_bind(char check[])
 	for (i = stack_ptr - 1; i >= 0; i--){
 		if (stack[i].value != NULL){
 #ifdef DEBUG
-			printf("%d:stack=%s\n", i, stack[i].label);
+			printf("%d:stack=%s ", i, stack[i].label);
 			print_symbol(stack[i].value);
 			puts("");
 #endif
@@ -299,6 +303,17 @@ void defrag(char check[MAX_SIZE], char heap[], int size, int* heap_ptr)
 	*heap_ptr = new_ptr;
 }
 
+void check_now_eval(char check[])
+{
+	int i;
+
+	if (evaling != -1){
+		for (i = evaling; i < heap_ptr; i++){
+			check[i] = 1;
+		}
+	}
+}
+
 void gc(void)
 {
 	char check[MAX_SIZE];
@@ -307,10 +322,11 @@ void gc(void)
 	int old_ptr;
 	int i;
 	
-	printf("symbol_heap=%d cons_heap %d\n", heap_ptr, cons_heap_ptr);
+	printf("evaling=%d symbol_heap=%d cons_heap %d\n", evaling, heap_ptr, cons_heap_ptr);
 	printf("start gc\n");
 	memset(check, 0, sizeof(check));
 	memset(check_cons, 0, sizeof(check_cons));
+	check_now_eval(check);
 	check_bind(check);
 	check_func(check);
 	for (i = 0; i < MAX_SIZE; i++){
@@ -457,13 +473,10 @@ void dump_symbol(void)
 {
 	int i;
 
-	puts("nadeko");
 	for (i = 0; i < heap_ptr; i++){
-#ifdef DEBUG
 		printf("%d: ", i);
 		print_symbol(&heap[i]);
 		puts("");
-#endif
 	}
 }
 void dump_stack(void)
@@ -513,7 +526,6 @@ SYMBOL* funcall(FUNC* f, CONS* arg)
 	result = eval(f->body);
 	bind_stack_end();
 #ifdef DEBUG_FUNCSTEP
-	dump_stack();
 	printf("out %s\n", f->label);
 #endif
 	
@@ -561,10 +573,32 @@ CONS* cdr(CONS* cons)
 
 SYMBOL* eval(SYMBOL* symb)
 {
+	SYMBOL* result;
+	int evaling_change;
+	
+	evaling_change = 0;
+	if (evaling == -1){
+		evaling_change = 1;
+		evaling = heap_ptr;
+	}
+	result = _eval(symb);
+	if (evaling_change == 1){
+		evaling = -1;
+	}
+
+	if (result - heap >= heap_ptr){
+		printf("over\n");
+		exit(1);
+	}
+
+	return (result);
+}
+
+SYMBOL* _eval(SYMBOL* symb)
+{
 	SYMBOL* _car;
 	CONS* _cdr;
 	SYMBOL* result;
-
 	
 	switch (symb->type){
 	  case LIST:
@@ -1039,6 +1073,7 @@ int print_symbol(SYMBOL* symb)
 
 	if (symb == NIL){
 		puts("nil");
+		return (0);
 	}
 
 	if (symb->type == LIST){
@@ -1116,7 +1151,7 @@ int main(void)
 	s = shell("(inc 10)", &end);
 	print_symbol(eval(s));
 	puts("");
-	s = shell("(defun sum (x) (cond ((eq x 1) 1) ((eq 1 1) (plus x (sum (minus x 1))))))", &end);
+	s = shell("(defun sum (x) (cond ((eq x 1) 1) (t (plus x (sum (minus x 1))))))", &end);
 	print_symbol(s);
 	print_symbol(eval(s));
 	puts("");
@@ -1194,6 +1229,18 @@ int main(void)
 	print_symbol(eval(s));
 	puts("test");
 	gc();
+	s = shell("(sum 1000)", &end);
+	print_symbol(eval(s));
+	puts("test");
+	s = shell("(sum 1000)", &end);
+	print_symbol(eval(s));
+	puts("");
+	s = shell("(setq x (sum 1000))", &end);
+	s = eval(s);
+	printf("%d %d\n", heap_ptr, s - heap);
+	puts("");
+	s = shell("x", &end);
+	print_symbol(eval(s));
 	
 	
 #endif
