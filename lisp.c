@@ -14,7 +14,9 @@ typedef void* CELL;
 #define F (5)
 #define LAMBDA (6)
 
-#define MAX_SIZE (100000)
+#define MAX_SIZE (500000)
+#define MAX_BIND (10000)
+#define MAX_FUNC (1024)
 #define MAX_LABEL_LEN (64)
 #define MAX_ARGS (128)
 
@@ -42,8 +44,8 @@ typedef struct {
 
 CONS cons_heap[MAX_SIZE];
 SYMBOL heap[MAX_SIZE];
-BIND bind[MAX_SIZE];
-FUNC func[MAX_SIZE];
+BIND bind[MAX_BIND];
+FUNC func[MAX_FUNC];
 BIND stack[MAX_SIZE];
 int cons_heap_ptr;
 int heap_ptr;
@@ -60,7 +62,7 @@ void dump_stack(void);
 
 SYMBOL* allocate_symbol(void)
 {
-	if ((float)heap_ptr / (float)MAX_SIZE >= 0.8){
+	if ((float)heap_ptr / (float)MAX_SIZE >= 0.99){
 		gc();
 	}
 	return (&heap[heap_ptr++]);
@@ -68,7 +70,7 @@ SYMBOL* allocate_symbol(void)
 
 CONS* allocate_cons(void)
 {
-	if ((float)cons_heap_ptr / (float)MAX_SIZE >= 0.8){
+	if ((float)cons_heap_ptr / (float)MAX_SIZE >= 0.99){
 		gc();
 	}
 	return (&cons_heap[cons_heap_ptr++]);
@@ -1258,11 +1260,14 @@ int main(void)
 	s = shell("(setq x (quote (1 2 3 4)))", &end);
 	print_symbol(eval(s));
 	puts("");
-	s = shell("(setq z (map (lambda (x) (multi x x)) (range 1000)))", &end);
+	s = shell("(setq z (map (lambda (x) (multi x x)) (range 100)))", &end);
 	print_symbol(eval(s));
 	puts("");
 	gc();
-	s = shell("z", &end);
+	s = shell("(setq w (rev z))", &end);
+	print_symbol(eval(s));
+	puts("");
+	s = shell("w", &end);
 	print_symbol(eval(s));
 	puts("");
 	gc();
