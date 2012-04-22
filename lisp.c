@@ -14,9 +14,12 @@ typedef void* CELL;
 #define F (5)
 #define LAMBDA (6)
 
-#define MAX_SIZE (10000)
+#define MAX_SIZE (100000)
 #define STACK_SIZE (100000)
 #define MAX_LABEL_LEN (64)
+
+#define USE (1)
+#define NONUSE (0)
 
 typedef struct {
 	CELL car;
@@ -40,7 +43,9 @@ typedef struct {
 	SYMBOL* body;
 } FUNC;
 
-int evaling = -1;
+char evaling[MAX_SIZE];
+char cons_heap_flag[MAX_SIZE];
+char heap_flag[MAX_SIZE];
 CONS cons_heap[MAX_SIZE];
 SYMBOL heap[MAX_SIZE];
 BIND bind[MAX_SIZE];
@@ -63,18 +68,36 @@ void dump_symbol(void);
 
 SYMBOL* allocate_symbol(void)
 {
+	int start_ptr;
+	SYMBOL* result;
+	
 	if ((float)heap_ptr / (float)MAX_SIZE >= 0.95){
 		gc();
 	}
-	return (&heap[heap_ptr++]);
+	start_ptr = heap_ptr;
+	while (heap_flag[heap_ptr] == USE){
+		heap_ptr = (heap_ptr + 1) % MAX_SIZE;
+	}
+	heap_flag[heap_ptr] = USE;
+	result = &heap[heap_ptr];
+	heap_ptr = (heap_ptr + 1) % MAX_SIZE;
+	return (result);
 }
 
 CONS* allocate_cons(void)
 {
+	CONS* result;
+
 	if ((float)cons_heap_ptr / (float)MAX_SIZE >= 0.8){
 		gc();
 	}
-	return (&cons_heap[cons_heap_ptr]);
+	while (cons_heap_flag[cons_heap_ptr] == USE){
+		cons_heap_ptr = (cons_heap_ptr + 1) % MAX_SIZE;
+	}
+	cons_heap_flag[cons_heap_ptr] = USE;
+	result = &cons_heap[cons_heap_ptr];
+	cons_heap_ptr = (cons_heap_ptr + 1) % MAX_SIZE;
+	return (result);
 }
 
 BIND* allocate_stack(void)
@@ -303,17 +326,6 @@ void defrag(char check[MAX_SIZE], char heap[], int size, int* heap_ptr)
 	*heap_ptr = new_ptr;
 }
 
-void check_now_eval(char check[])
-{
-	int i;
-
-	if (evaling != -1){
-		for (i = evaling; i < heap_ptr; i++){
-			check[i] = 1;
-		}
-	}
-}
-
 void gc(void)
 {
 	char check[MAX_SIZE];
@@ -322,11 +334,11 @@ void gc(void)
 	int old_ptr;
 	int i;
 	
-	printf("evaling=%d symbol_heap=%d cons_heap %d\n", evaling, heap_ptr, cons_heap_ptr);
+	printf("symbol_heap=%d cons_heap %d\n", heap_ptr, cons_heap_ptr);
 	printf("start gc\n");
-	memset(check, 0, sizeof(check));
+	//memset(check, 0, sizeof(check));
+	memcpy(check, evaling, sizeof(check));
 	memset(check_cons, 0, sizeof(check_cons));
-	check_now_eval(check);
 	check_bind(check);
 	check_func(check);
 	for (i = 0; i < MAX_SIZE; i++){
@@ -334,13 +346,16 @@ void gc(void)
 			checking(check, check_cons, i);
 		}
 	}
-	defrag(check, (char *)heap, sizeof(SYMBOL), &heap_ptr);
-	defrag(check_cons, (char *)cons_heap, sizeof(CONS), &cons_heap_ptr);
-	for (i = heap_ptr; i < MAX_SIZE; i++){
-		memset(&heap[i], 0, sizeof(SYMBOL));
+	memcpy(heap_flag, check, sizeof(check));
+	memcpy(cons_heap_flag, check_cons, sizeof(check_cons));
+	for (i = 0; i < MAX_SIZE; i++){
+		if (heap_flag[i] == 0){
+			memset(&heap[i], 0, sizeof(SYMBOL));
+		}
 	}
 	puts("end gc");
 	printf("symbol_heap=%d cons_heap %d\n", heap_ptr, cons_heap_ptr);
+	heap_ptr = cons_heap_ptr = 0;
 }
 
 SYMBOL* bind_match(char label[])
@@ -574,22 +589,10 @@ CONS* cdr(CONS* cons)
 SYMBOL* eval(SYMBOL* symb)
 {
 	SYMBOL* result;
-	int evaling_change;
 	
-	evaling_change = 0;
-	if (evaling == -1){
-		evaling_change = 1;
-		evaling = heap_ptr;
-	}
+	evaling[symb - heap] = 1;
 	result = _eval(symb);
-	if (evaling_change == 1){
-		evaling = -1;
-	}
-
-	if (result - heap >= heap_ptr){
-		printf("over\n");
-		exit(1);
-	}
+	evaling[symb - heap] = 0;
 
 	return (result);
 }
@@ -1237,10 +1240,11 @@ int main(void)
 	puts("");
 	s = shell("(setq x (sum 1000))", &end);
 	s = eval(s);
-	printf("%d %d\n", heap_ptr, s - heap);
+	print_symbol(s);
 	puts("");
 	s = shell("x", &end);
 	print_symbol(eval(s));
+	gc();
 	
 	
 #endif
