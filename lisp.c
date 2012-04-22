@@ -40,7 +40,6 @@ typedef struct {
 	SYMBOL* body;
 } FUNC;
 
-int evaling = -1;
 CONS cons_heap[MAX_SIZE];
 SYMBOL heap[MAX_SIZE];
 BIND bind[MAX_SIZE];
